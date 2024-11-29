@@ -34,8 +34,20 @@ LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.StreamHandler())
 LOGGER.setLevel(logging.INFO)
 
-def get_crt(account_key, csr, acme_dir, log=LOGGER, disable_check=False, directory_url=DEFAULT_DIRECTORY_URL, contact=None, check_port=None):
+def get_crt(account_key, csr, acme_dir, azure_keyvault_uri, log=LOGGER, disable_check=False, directory_url=DEFAULT_DIRECTORY_URL, contact=None, check_port=None):
     directory, acct_headers, alg, jwk = None, None, None, None # global variables
+
+    if account_key == None:
+        try:
+            print(azure_keyvault_uri)
+            # TODO: Fetch account key from Azure Key Vault using urllib.request using the value of azure-keyvault-uri
+        except:
+            print("")
+            # TODO: Create a new account key, and store it in Azure Key Vault using OpenSSL and then urllib.request using the value of azure-keyvault-uri
+        finally:
+            print("")
+            # TODO: Write the account key to a file called account.key and set the env var, as if you had passed it normally
+            account_key = "account.key"
 
     # helper functions - base64 encode for jose spec
     def _b64(b):
@@ -200,9 +212,10 @@ def main(argv=None):
             Example Usage: python acme_tiny.py --account-key ./account.key --csr ./domain.csr --acme-dir /usr/share/nginx/html/.well-known/acme-challenge/ > signed_chain.crt
             """)
     )
-    parser.add_argument("--account-key", required=True, help="path to your Let's Encrypt account private key")
+    parser.add_argument("--account-key", default=None, help="path to your Let's Encrypt account private key")
     parser.add_argument("--csr", required=True, help="path to your certificate signing request")
     parser.add_argument("--acme-dir", required=True, help="path to the .well-known/acme-challenge/ directory")
+    parser.add_argument("--azure-keyvault-uri", required=True, help="Specify the full Azure Key Vault URI, exactly as it would be shown on the Azure Portal. e.g 'https://name-test-d-kv.vault.azure.net/' ")
     parser.add_argument("--quiet", action="store_const", const=logging.ERROR, help="suppress output except for errors")
     parser.add_argument("--disable-check", default=False, action="store_true", help="disable checking if the challenge file is hosted correctly before telling the CA")
     parser.add_argument("--directory-url", default=DEFAULT_DIRECTORY_URL, help="certificate authority directory url, default is Let's Encrypt")
@@ -211,7 +224,7 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     LOGGER.setLevel(args.quiet or LOGGER.level)
-    signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, log=LOGGER, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact, check_port=args.check_port)
+    signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, args.azure_keyvault_uri, log=LOGGER, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact, check_port=args.check_port)
     sys.stdout.write(signed_crt)
 
 main(sys.argv[1:])
