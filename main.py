@@ -190,5 +190,4 @@ def main(argv=None):
     signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, log=LOGGER, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact, check_port=args.check_port)
     sys.stdout.write(signed_crt)
 
-if __name__ == "__main__": # pragma: no cover
-    main(sys.argv[1:])
+main(sys.argv[1:])
