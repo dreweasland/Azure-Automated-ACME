@@ -25,7 +25,7 @@
 
 # This python script contains derivative works taken from https://github.com/diafygi/acme-tiny @ c29c0f36cedbca2a7117169c6a9e1f166c501899
 
-import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, copy, textwrap, logging
+import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, textwrap, logging
 from urllib.request import urlopen, Request
 
 DEFAULT_DIRECTORY_URL = "https://acme-v02.api.letsencrypt.org/directory"
