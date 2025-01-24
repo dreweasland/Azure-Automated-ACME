@@ -49,6 +49,11 @@ def get_crt(account_key, csr, acme_dir, azure_keyvault_uri, log=LOGGER, disable_
             # TODO: Write the account key to a file called account.key and set the env var, as if you had passed it normally
             account_key = "account.key"
 
+    if csr == None:
+        # TODO: Generate a CSR using OpenSSL, write it to a file called thisisthe.csr
+        # This is good to do upon every single run, because it means we reduce the risk posed by a bad CSPRNG, compared to if we were to reuse a CSR file
+        csr = "thisisthe.csr"
+
     # helper functions - base64 encode for jose spec
     def _b64(b):
         return base64.urlsafe_b64encode(b).decode('utf8').replace("=", "")
@@ -201,6 +206,29 @@ def get_crt(account_key, csr, acme_dir, azure_keyvault_uri, log=LOGGER, disable_
     log.info("Certificate signed!")
     return certificate_pem
 
+def store_tls_cert_in_kv():
+    print()
+    # TODO: Use urllib.request using to push the certificate to the value of azure-keyvault-uri to "cert-<unixtime>" and update "live"
+
+def tag_application_gateway():
+    print()
+    # TODO: Increment a tag called "ACME" on the Azure Application Gateway with the current Unix time - this way it uses the new cert in "live"
+    
+def check_if_new_cert_is_used():
+    print()
+    # TODO: Pull the serial number from the certificate we obtained earlier with OpenSSL
+    serial_number = "bruh"
+    # TODO: Connect to the Azure Application Gateway every 10 seconds, for up to 10 minutes, until the serial number matches with what we pushed to "live", otherwise fail
+
+def check_for_certs_to_revoke():
+    print()
+    # TODO: List all secrets used to hold TLS certificates in Azure Key Vault which begin with "cert"
+    # TODO: For every certificate matchin the above, revoke it, unless it matches the certificate we generated earlier
+
+def revoke_old_certs():
+    print()
+    # TODO: 
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -213,7 +241,7 @@ def main(argv=None):
             """)
     )
     parser.add_argument("--account-key", default=None, help="path to your Let's Encrypt account private key")
-    parser.add_argument("--csr", required=True, help="path to your certificate signing request")
+    parser.add_argument("--csr", default=None, help="path to your certificate signing request")
     parser.add_argument("--acme-dir", required=True, help="path to the .well-known/acme-challenge/ directory")
     parser.add_argument("--azure-keyvault-uri", required=True, help="Specify the full Azure Key Vault URI, exactly as it would be shown on the Azure Portal. e.g 'https://name-test-d-kv.vault.azure.net/' ")
     parser.add_argument("--quiet", action="store_const", const=logging.ERROR, help="suppress output except for errors")
@@ -225,6 +253,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     LOGGER.setLevel(args.quiet or LOGGER.level)
     signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, args.azure_keyvault_uri, log=LOGGER, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact, check_port=args.check_port)
-    sys.stdout.write(signed_crt)
+    store_tls_cert_in_kv(signed_crt)
+    tag_application_gateway()
+    check_for_certs_to_revoke()
+    revoke_old_certs()
 
 main(sys.argv[1:])
