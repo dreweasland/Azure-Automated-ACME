@@ -308,11 +308,11 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
 
     # create account, update contact details (if any), and set the global key identifier
     log.info("Registering account...")
-    reg_payload = {"termsOfServiceAgreed": True} if contact is None else {"termsOfServiceAgreed": True, "contact": contact}
+    reg_payload = {"termsOfServiceAgreed": True} if contact is None else {"termsOfServiceAgreed": True, "contact": [contact,]}
     account, code, acct_headers = _send_signed_request(directory['newAccount'], reg_payload, "Error registering")
     log.info("{0} Account ID: {1}".format("Registered!" if code == 201 else "Already registered!", acct_headers['Location']))
     if contact is not None:
-        account, _, _ = _send_signed_request(acct_headers['Location'], {"contact": contact}, "Error updating contact details")
+        account, _, _ = _send_signed_request(acct_headers['Location'], {"contact": [contact,]}, "Error updating contact details")
         log.info("Updated contact details:\n{0}".format("\n".join(account['contact'])))
 
     # create a new order
