@@ -27,7 +27,7 @@
 
 import subprocess, json, os, base64, binascii, time, hashlib, re, logging, os
 from urllib.request import urlopen, Request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.error import URLError, HTTPError
 
 class BlobStorageAuth:
@@ -36,7 +36,7 @@ class BlobStorageAuth:
         self.token_expires_at = None
     def get_access_token(self):
         # Keep same access token if it has not expired yet, since they have a 1 hour lifetime
-        if self.token and self.token_expires_at > datetime.now(datetime.timezone.utc) + timedelta(minutes=5):
+        if self.token and self.token_expires_at > datetime.now(timezone.utc) + timedelta(minutes=5):
             return self.token
         endpoint = os.getenv('IDENTITY_ENDPOINT')
         identity_header = os.getenv('IDENTITY_HEADER')
@@ -53,7 +53,7 @@ class BlobStorageAuth:
                 raise Exception(f"Failed to obtain token. Status code: {response.status}")
             response_data = json.loads(response.read())
             self.token = response_data['access_token']
-            self.token_expires_at = datetime.now(datetime.timezone.utc) + timedelta(hours=1)
+            self.token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
             return self.token
         except URLError as e:
             raise Exception(f"Failed to obtain token: {str(e)}")
@@ -68,7 +68,7 @@ class BlobStorageClient:
         headers = {
             'Authorization': f'Bearer {token}',
             'x-ms-version': '2021-08-06',
-            'x-ms-date': datetime.now(datetime.timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT'),
+            'x-ms-date': datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT'),
             'Content-Type': 'application/octet-stream',
             'Content-Length': str(len(content)),
             'x-ms-blob-type': 'BlockBlob'
@@ -152,7 +152,7 @@ class KeyVaultClient:
         parsed_json = json.loads(response.read().decode())
         return parsed_json['value']
 
-ACCOUNT_KEY_SECRET_NAME = "betteragwacme-accountkey"
+ACCOUNT_KEY_SECRET_NAME = "betteragwacme-accountkey-test1"
 TLS_CERT_SECRET_NAME = "betteragwacme-tlscert"
 ACCOUNT_KEY_PATH = "/tmp/thisistheaccount.key"
 CSR_PATH="/tmp/thisisthe.csr"
@@ -171,6 +171,18 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
     # Global variable init
     directory, acct_headers, alg, jwk = None, None, None, None
 
+    # helper functions - base64 encode for jose spec
+    def _b64(b):
+        return base64.urlsafe_b64encode(b).decode('utf8').replace("=", "")
+
+    # helper function - run external commands
+    def _cmd(cmd_list, stdin=None, cmd_input=None, err_msg="Command Line Error"):
+        proc = subprocess.Popen(cmd_list, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = proc.communicate(cmd_input)
+        if proc.returncode != 0:
+            raise IOError("{0}\n{1}".format(err_msg, err))
+        return out
+
     # Fetch account key from Azure KeyVault, if one does not exist, generate one and store it there
     try:
         keyvault_client = KeyVaultClient(azure_keyvault_name)
@@ -180,16 +192,17 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
             if e.code == 404:
                 print("Secret for account key was not found, making new account key")
                 try:
-                    out = _cmd(["openssl", "genrsa", "4096", ">", ACCOUNT_KEY_PATH], err_msg="OpenSSL Error")
+                    account_key_value = _cmd(["openssl", "genrsa", "4096"], err_msg="OpenSSL Error")
+                    with open(ACCOUNT_KEY_PATH, "wb") as file:
+                        file.write(account_key_value)
                 except:
                     print("Something has gone very wrong whilst trying to generate a new account key")
-                    print("The error is: ",e)
                     exit()
                 finally:
                     print("Generated new account key with OpenSSL")
                     with open(ACCOUNT_KEY_PATH, "r") as file:
-                        new_account_key = file.read()
-                    success = keyvault_client.set_secret(secret_name=ACCOUNT_KEY_SECRET_NAME,secret_value=new_account_key,expiry_time="never")
+                        account_key_value = file.read()
+                    success = keyvault_client.set_secret(secret_name=ACCOUNT_KEY_SECRET_NAME,secret_value=account_key_value,expiry_time="never")
             else:
                 print("Something has gone very wrong whilst trying to fetch the account key from keyvault")
                 print("The error is: ",e)
@@ -202,28 +215,20 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
 
     # Generate domain private key and CSR with OpenSSL
     try:
-        # Run OpenSSL command to generate CSR TODO
-        out = _cmd(["openssl", "genrsa", "4096", ">", DOMAIN_PRIVATE_KEY_PATH], err_msg="OpenSSL Error")
+        # Run OpenSSL command to generate CSR and domain key
+        domain_private_key = _cmd(["openssl", "genrsa", "4096"], err_msg="OpenSSL Error")
+        with open(DOMAIN_PRIVATE_KEY_PATH, "wb") as file:
+            file.write(domain_private_key)
+        
         cn = "/CN="+COMMON_NAME
-        out = _cmd(["openssl", "req", "-new", "-sha256", "-key", DOMAIN_PRIVATE_KEY_PATH, "-subj", cn, ">", CSR_PATH], err_msg="OpenSSL Error")
+        csr_value = _cmd(["openssl", "req", "-new", "-sha256", "-key", DOMAIN_PRIVATE_KEY_PATH, "-subj", cn], err_msg="OpenSSL Error")
+        with open(CSR_PATH, "wb") as file:
+            file.write(csr_value)
     except:
         print("Something has gone very wrong whilst trying to generate a new CSR or domain private key")
-        print("The error is: ",e)
         exit()
     finally:
         print("Generated new CSR and domain private key with OpenSSL")
-
-    # helper functions - base64 encode for jose spec
-    def _b64(b):
-        return base64.urlsafe_b64encode(b).decode('utf8').replace("=", "")
-
-    # helper function - run external commands
-    def _cmd(cmd_list, stdin=None, cmd_input=None, err_msg="Command Line Error"):
-        proc = subprocess.Popen(cmd_list, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = proc.communicate(cmd_input)
-        if proc.returncode != 0:
-            raise IOError("{0}\n{1}".format(err_msg, err))
-        return out
 
     # helper function - make request and automatically parse json response
     def _do_request(url, data=None, err_msg="Error", depth=0):
@@ -335,15 +340,9 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
         # Upload ACME challenge TXT to Blob Storage
         storage_client = BlobStorageClient(BLOB_STORAGE_NAME)
         blob_name=".well-known/acme-challenge/"+token
+        keyauthorization = bytes(keyauthorization,"utf-8")
         success = storage_client.upload_blob(container_name="$web",blob_name=blob_name,content=keyauthorization)
-        print(f"\nUpload successful for ACME Challenge file: {success}")
-
-        # check that the file is in place
-        try:
-            wellknown_url = "http://{0}/.well-known/acme-challenge/{1}".format(domain, token)
-            assert (_do_request(wellknown_url)[0] == keyauthorization)
-        except (AssertionError, ValueError) as e:
-            raise ValueError("Wrote file to Blob Storage at {0}, but couldn't download {1}: {2}".format(blob_name, wellknown_url, e))
+        print(f"Upload successful for ACME Challenge file: {success}")
 
         # say the challenge is done
         _send_signed_request(challenge['url'], {}, "Error submitting challenges: {0}".format(domain))
@@ -352,7 +351,7 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
             raise ValueError("Challenge did not pass for {0}: {1}".format(domain, authorization))
         
         success = storage_client.delete_blob(container_name="$web",blob_name=blob_name)
-        print(f"\nDelete successful for ACME Challenge file as we are done with it now: {success}") 
+        print(f"Delete successful for ACME Challenge file as we are done with it now: {success}") 
         log.info("{0} verified!".format(domain))
 
     # finalize the order with the csr
