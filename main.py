@@ -25,34 +25,193 @@
 
 # This python script contains derivative works taken from https://github.com/diafygi/acme-tiny @ c29c0f36cedbca2a7117169c6a9e1f166c501899
 
-import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, textwrap, logging
+import subprocess, json, os, base64, binascii, time, hashlib, re, logging, os
 from urllib.request import urlopen, Request
+from datetime import datetime, timedelta
+from urllib.error import URLError, HTTPError
 
-DEFAULT_DIRECTORY_URL = "https://acme-v02.api.letsencrypt.org/directory"
+class BlobStorageAuth:
+    def __init__(self):
+        self.token = None
+        self.token_expires_at = None
+    def get_access_token(self):
+        # Keep same access token if it has not expired yet, since they have a 1 hour lifetime
+        if self.token and self.token_expires_at > datetime.now(datetime.timezone.utc) + timedelta(minutes=5):
+            return self.token
+        endpoint = os.getenv('IDENTITY_ENDPOINT')
+        identity_header = os.getenv('IDENTITY_HEADER')
+        resource_url = f"{endpoint}?resource=https://storage.azure.com/&api-version=2019-08-01"
+        headers = {
+            'X-IDENTITY-HEADER': identity_header,
+            'Metadata': 'true',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        try:
+            req = Request(resource_url, headers=headers, method='GET')
+            response = urlopen(req, timeout=30)
+            if response.status != 200:
+                raise Exception(f"Failed to obtain token. Status code: {response.status}")
+            response_data = json.loads(response.read())
+            self.token = response_data['access_token']
+            self.token_expires_at = datetime.now(datetime.timezone.utc) + timedelta(hours=1)
+            return self.token
+        except URLError as e:
+            raise Exception(f"Failed to obtain token: {str(e)}")
 
+class BlobStorageClient:
+    def __init__(self, storage_account_name):
+        self.storage_account_name = storage_account_name
+        self.auth = BlobStorageAuth()
+        self.base_url = f"https://{storage_account_name}.blob.core.windows.net"
+    def upload_blob(self, container_name, blob_name, content):
+        token = self.auth.get_access_token()
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'x-ms-version': '2021-08-06',
+            'x-ms-date': datetime.now(datetime.timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT'),
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': str(len(content)),
+            'x-ms-blob-type': 'BlockBlob'
+        }
+        url = f"{self.base_url}/{container_name}/{blob_name}"
+        req = Request(url, headers=headers, method='PUT', data=content)
+        urlopen(req)
+        return True
+    def delete_blob(self, container_name, blob_name):
+        token = self.auth.get_access_token()
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'x-ms-version': '2021-08-06',
+            'x-ms-date': datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT'),
+            'x-ms-delete-snapshots': 'include'
+        }
+        url = f"{self.base_url}/{container_name}/{blob_name}"
+        req = Request(url, headers=headers, method='DELETE')
+        urlopen(req)
+        return True
+
+class KeyVaultAuth:
+    def __init__(self):
+        self.token = None
+        self.token_expires_at = None
+    def get_access_token(self):
+        if self.token and self.token_expires_at > datetime.utcnow() + timedelta(minutes=5):
+            return self.token
+        endpoint = os.getenv('IDENTITY_ENDPOINT')
+        identity_header = os.getenv('IDENTITY_HEADER')
+        resource_url = f"{endpoint}?resource=https://vault.azure.net/&api-version=2019-08-01"
+        headers = {
+            'X-IDENTITY-HEADER': identity_header,
+            'Metadata': 'true',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        try:
+            req = Request(resource_url, headers=headers, method='GET')
+            response = urlopen(req, timeout=30)
+            if response.status != 200:
+                raise Exception(f"Failed to obtain token. Status code: {response.status}")
+            response_data = json.loads(response.read())
+            self.token = response_data['access_token']
+            self.token_expires_at = datetime.utcnow() + timedelta(hours=1)
+            return self.token
+        except URLError as e:
+            raise Exception(f"Failed to obtain token: {str(e)}")
+
+class KeyVaultClient:
+    def __init__(self, key_vault_name):
+        self.key_vault_name = key_vault_name
+        self.auth = KeyVaultAuth()
+        self.base_url = f"https://{key_vault_name}.vault.azure.net"
+        self.api_version = "7.4"
+    def set_secret(self, secret_name, secret_value, expiry_time):
+        token = self.auth.get_access_token()
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json',
+        }
+        url = f"{self.base_url}/secrets/{secret_name}?api-version={self.api_version}"
+        if expiry_time != "never":
+            json_data_attributes = {"enabled":"true","exp": expiry_time}
+            # We always set the contentType here because only TLS certificates used on Application Gateway ever have an expiry time
+            json_data = {"value": secret_value, "contentType":"application/x-pkcs12","attributes": json_data_attributes}
+        else:
+            json_data = {"value": secret_value}
+        encoded_json_data = json.dumps(json_data).encode()
+        req = Request(url, headers=headers, method='PUT', data=encoded_json_data)
+        urlopen(req)
+        return True
+    def get_latest_secret_value(self, secret_name):
+        token = self.auth.get_access_token()
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json',
+        }
+        url = f"{self.base_url}/secrets/{secret_name}?api-version={self.api_version}"
+        req = Request(url, headers=headers, method='GET')
+        response = urlopen(req)
+        parsed_json = json.loads(response.read().decode())
+        return parsed_json['value']
+
+ACCOUNT_KEY_SECRET_NAME = "betteragwacme-accountkey"
+TLS_CERT_SECRET_NAME = "betteragwacme-tlscert"
+ACCOUNT_KEY_PATH = "/tmp/thisistheaccount.key"
+CSR_PATH="/tmp/thisisthe.csr"
+DOMAIN_PRIVATE_KEY_PATH="/tmp/thisisthedomainprivate.key"
+DEFAULT_DIRECTORY_URL = os.environ.get("ACME_DIRECTORY_URL")
+BLOB_STORAGE_NAME = os.environ.get("ACME_BLOB_STORAGE_NAME")
+CONTACT_EMAIL = os.environ.get("ACME_CONTACT_EMAIL")
+KEYVAULT_NAME = os.environ.get("ACME_KEYVAULT_NAME")
+COMMON_NAME = os.environ.get("ACME_COMMON_NAME")
 LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.StreamHandler())
 LOGGER.setLevel(logging.INFO)
 
-def get_crt(account_key, csr, acme_dir, azure_keyvault_uri, log=LOGGER, disable_check=False, directory_url=DEFAULT_DIRECTORY_URL, contact=None, check_port=None):
-    directory, acct_headers, alg, jwk = None, None, None, None # global variables
+def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT_DIRECTORY_URL, contact=CONTACT_EMAIL):
 
-    if account_key == None:
-        try:
-            print(azure_keyvault_uri)
-            # TODO: Fetch account key from Azure Key Vault using urllib.request using the value of azure-keyvault-uri
-        except:
-            print("")
-            # TODO: Create a new account key, and store it in Azure Key Vault using OpenSSL and then urllib.request using the value of azure-keyvault-uri
-        finally:
-            print("")
-            # TODO: Write the account key to a file called account.key and set the env var, as if you had passed it normally
-            account_key = "account.key"
+    # Global variable init
+    directory, acct_headers, alg, jwk = None, None, None, None
 
-    if csr == None:
-        # TODO: Generate a CSR using OpenSSL, write it to a file called thisisthe.csr
-        # This is good to do upon every single run, because it means we reduce the risk posed by a bad CSPRNG, compared to if we were to reuse a CSR file
-        csr = "thisisthe.csr"
+    # Fetch account key from Azure KeyVault, if one does not exist, generate one and store it there
+    try:
+        keyvault_client = KeyVaultClient(azure_keyvault_name)
+        account_key_value = keyvault_client.get_latest_secret_value(secret_name=ACCOUNT_KEY_SECRET_NAME)
+
+    except HTTPError as e:
+            if e.code == 404:
+                print("Secret for account key was not found, making new account key")
+                try:
+                    out = _cmd(["openssl", "genrsa", "4096", ">", ACCOUNT_KEY_PATH], err_msg="OpenSSL Error")
+                except:
+                    print("Something has gone very wrong whilst trying to generate a new account key")
+                    print("The error is: ",e)
+                    exit()
+                finally:
+                    print("Generated new account key with OpenSSL")
+                    with open(ACCOUNT_KEY_PATH, "r") as file:
+                        new_account_key = file.read()
+                    success = keyvault_client.set_secret(secret_name=ACCOUNT_KEY_SECRET_NAME,secret_value=new_account_key,expiry_time="never")
+            else:
+                print("Something has gone very wrong whilst trying to fetch the account key from keyvault")
+                print("The error is: ",e)
+                exit()
+    finally:
+        # Write account key value, be it obtained via Azure Key Vault or generated
+        with open(ACCOUNT_KEY_PATH, "w") as file:
+            file.write(account_key_value)
+
+
+    # Generate domain private key and CSR with OpenSSL
+    try:
+        # Run OpenSSL command to generate CSR TODO
+        out = _cmd(["openssl", "genrsa", "4096", ">", DOMAIN_PRIVATE_KEY_PATH], err_msg="OpenSSL Error")
+        cn = "/CN="+COMMON_NAME
+        out = _cmd(["openssl", "req", "-new", "-sha256", "-key", DOMAIN_PRIVATE_KEY_PATH, "-subj", cn, ">", CSR_PATH], err_msg="OpenSSL Error")
+    except:
+        print("Something has gone very wrong whilst trying to generate a new CSR or domain private key")
+        print("The error is: ",e)
+        exit()
+    finally:
+        print("Generated new CSR and domain private key with OpenSSL")
 
     # helper functions - base64 encode for jose spec
     def _b64(b):
@@ -92,7 +251,7 @@ def get_crt(account_key, csr, acme_dir, azure_keyvault_uri, log=LOGGER, disable_
         protected.update({"jwk": jwk} if acct_headers is None else {"kid": acct_headers['Location']})
         protected64 = _b64(json.dumps(protected).encode('utf8'))
         protected_input = "{0}.{1}".format(protected64, payload64).encode('utf8')
-        out = _cmd(["openssl", "dgst", "-sha256", "-sign", account_key], stdin=subprocess.PIPE, cmd_input=protected_input, err_msg="OpenSSL Error")
+        out = _cmd(["openssl", "dgst", "-sha256", "-sign", ACCOUNT_KEY_PATH], stdin=subprocess.PIPE, cmd_input=protected_input, err_msg="OpenSSL Error")
         data = json.dumps({"protected": protected64, "payload": payload64, "signature": _b64(out)})
         try:
             return _do_request(url, data=data.encode('utf8'), err_msg=err_msg, depth=depth)
@@ -110,7 +269,7 @@ def get_crt(account_key, csr, acme_dir, azure_keyvault_uri, log=LOGGER, disable_
 
     # parse account key to get public key
     log.info("Parsing account key...")
-    out = _cmd(["openssl", "rsa", "-in", account_key, "-noout", "-text"], err_msg="OpenSSL Error")
+    out = _cmd(["openssl", "rsa", "-in", ACCOUNT_KEY_PATH, "-noout", "-text"], err_msg="OpenSSL Error")
     pub_pattern = r"modulus:[\s]+?00:([a-f0-9\:\s]+?)\npublicExponent: ([0-9]+)"
     pub_hex, pub_exp = re.search(pub_pattern, out.decode('utf8'), re.MULTILINE|re.DOTALL).groups()
     pub_exp = "{0:x}".format(int(pub_exp))
@@ -125,7 +284,7 @@ def get_crt(account_key, csr, acme_dir, azure_keyvault_uri, log=LOGGER, disable_
 
     # find domains
     log.info("Parsing CSR...")
-    out = _cmd(["openssl", "req", "-in", csr, "-noout", "-text"], err_msg="Error loading {0}".format(csr))
+    out = _cmd(["openssl", "req", "-in", CSR_PATH, "-noout", "-text"], err_msg="Error loading {0}".format(CSR_PATH))
     domains = set([])
     common_name = re.search(r"Subject:.*? CN\s?=\s?([^\s,;/]+)", out.decode('utf8'))
     if common_name is not None:
@@ -172,28 +331,33 @@ def get_crt(account_key, csr, acme_dir, azure_keyvault_uri, log=LOGGER, disable_
         challenge = [c for c in authorization['challenges'] if c['type'] == "http-01"][0]
         token = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
         keyauthorization = "{0}.{1}".format(token, thumbprint)
-        wellknown_path = os.path.join(acme_dir, token)
-        with open(wellknown_path, "w") as wellknown_file:
-            wellknown_file.write(keyauthorization)
+
+        # Upload ACME challenge TXT to Blob Storage
+        storage_client = BlobStorageClient(BLOB_STORAGE_NAME)
+        blob_name=".well-known/acme-challenge/"+token
+        success = storage_client.upload_blob(container_name="$web",blob_name=blob_name,content=keyauthorization)
+        print(f"\nUpload successful for ACME Challenge file: {success}")
 
         # check that the file is in place
         try:
-            wellknown_url = "http://{0}{1}/.well-known/acme-challenge/{2}".format(domain, "" if check_port is None else ":{0}".format(check_port), token)
-            assert (disable_check or _do_request(wellknown_url)[0] == keyauthorization)
+            wellknown_url = "http://{0}/.well-known/acme-challenge/{1}".format(domain, token)
+            assert (_do_request(wellknown_url)[0] == keyauthorization)
         except (AssertionError, ValueError) as e:
-            raise ValueError("Wrote file to {0}, but couldn't download {1}: {2}".format(wellknown_path, wellknown_url, e))
+            raise ValueError("Wrote file to Blob Storage at {0}, but couldn't download {1}: {2}".format(blob_name, wellknown_url, e))
 
         # say the challenge is done
         _send_signed_request(challenge['url'], {}, "Error submitting challenges: {0}".format(domain))
         authorization = _poll_until_not(auth_url, ["pending"], "Error checking challenge status for {0}".format(domain))
         if authorization['status'] != "valid":
             raise ValueError("Challenge did not pass for {0}: {1}".format(domain, authorization))
-        os.remove(wellknown_path)
+        
+        success = storage_client.delete_blob(container_name="$web",blob_name=blob_name)
+        print(f"\nDelete successful for ACME Challenge file as we are done with it now: {success}") 
         log.info("{0} verified!".format(domain))
 
     # finalize the order with the csr
     log.info("Signing certificate...")
-    csr_der = _cmd(["openssl", "req", "-in", csr, "-outform", "DER"], err_msg="DER Export Error")
+    csr_der = _cmd(["openssl", "req", "-in", CSR_PATH, "-outform", "DER"], err_msg="DER Export Error")
     _send_signed_request(order['finalize'], {"csr": _b64(csr_der)}, "Error finalizing order")
 
     # poll the order to monitor when it's done
@@ -204,58 +368,25 @@ def get_crt(account_key, csr, acme_dir, azure_keyvault_uri, log=LOGGER, disable_
     # download the certificate
     certificate_pem, _, _ = _send_signed_request(order['certificate'], None, "Certificate download failed")
     log.info("Certificate signed!")
+
+    try:
+        os.remove(DOMAIN_PRIVATE_KEY_PATH)
+        os.remove(CSR_PATH)
+        os.remove(ACCOUNT_KEY_PATH)
+    except:
+        print("Error: Unable to fully clean up all files")
+    finally:
+        print("Finished with all ACME processes and cleanup")
     return certificate_pem
 
-def store_tls_cert_in_kv():
-    print()
-    # TODO: Use urllib.request using to push the certificate to the value of azure-keyvault-uri to "cert-<unixtime>" and update "live"
-
-def tag_application_gateway():
-    print()
-    # TODO: Increment a tag called "ACME" on the Azure Application Gateway with the current Unix time - this way it uses the new cert in "live"
-    
-def check_if_new_cert_is_used():
-    print()
-    # TODO: Pull the serial number from the certificate we obtained earlier with OpenSSL
-    serial_number = "bruh"
-    # TODO: Connect to the Azure Application Gateway every 10 seconds, for up to 10 minutes, until the serial number matches with what we pushed to "live", otherwise fail
-
-def check_for_certs_to_revoke():
-    print()
-    # TODO: List all secrets used to hold TLS certificates in Azure Key Vault which begin with "cert"
-    # TODO: For every certificate matchin the above, revoke it, unless it matches the certificate we generated earlier
-
-def revoke_old_certs():
-    print()
-    # TODO: 
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=textwrap.dedent("""\
-            This script automates the process of getting a signed TLS certificate from Let's Encrypt using the ACME protocol.
-            It will need to be run on your server and have access to your private account key, so PLEASE READ THROUGH IT!
-            It's only ~200 lines, so it won't take long.
-
-            Example Usage: python acme_tiny.py --account-key ./account.key --csr ./domain.csr --acme-dir /usr/share/nginx/html/.well-known/acme-challenge/ > signed_chain.crt
-            """)
-    )
-    parser.add_argument("--account-key", default=None, help="path to your Let's Encrypt account private key")
-    parser.add_argument("--csr", default=None, help="path to your certificate signing request")
-    parser.add_argument("--acme-dir", required=True, help="path to the .well-known/acme-challenge/ directory")
-    parser.add_argument("--azure-keyvault-uri", required=True, help="Specify the full Azure Key Vault URI, exactly as it would be shown on the Azure Portal. e.g 'https://name-test-d-kv.vault.azure.net/' ")
-    parser.add_argument("--quiet", action="store_const", const=logging.ERROR, help="suppress output except for errors")
-    parser.add_argument("--disable-check", default=False, action="store_true", help="disable checking if the challenge file is hosted correctly before telling the CA")
-    parser.add_argument("--directory-url", default=DEFAULT_DIRECTORY_URL, help="certificate authority directory url, default is Let's Encrypt")
-    parser.add_argument("--contact", metavar="CONTACT", default=None, nargs="*", help="Contact details (e.g. mailto:aaa@bbb.com) for your account-key")
-    parser.add_argument("--check-port", metavar="PORT", default=None, help="what port to use when self-checking the challenge file, default is port 80")
-
-    args = parser.parse_args(argv)
-    LOGGER.setLevel(args.quiet or LOGGER.level)
-    signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, args.azure_keyvault_uri, log=LOGGER, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact, check_port=args.check_port)
-    store_tls_cert_in_kv(signed_crt)
-    tag_application_gateway()
-    check_for_certs_to_revoke()
-    revoke_old_certs()
-
-main(sys.argv[1:])
+def main():
+    # Go through the whole ACME flow, this deals with the account key, CSR, acme-challenge, removal of the ACME challenge and cleanup.
+    signed_crt = get_crt()
+    key_vault_client = KeyVaultClient(KEYVAULT_NAME)
+    future_date = datetime.utcnow() + timedelta(days=90) # TLS certificates only have a max lifetime of 90 days
+    future_unix_time = int(future_date.timestamp())
+    success = key_vault_client.set_secret(secret_name=TLS_CERT_SECRET_NAME,secret_value=signed_crt,expiry_time=future_unix_time)
+    print("We have finished everything!", success)
+    # TODO: We now need to tag the Azure Application Gateway, so that way it will use the new cert immediately
+    # TODO: We now need to revoke any certificates which remain in Azure Key Vault, and set them to expire in the next 10 minutes
+main()
