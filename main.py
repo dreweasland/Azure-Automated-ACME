@@ -135,7 +135,7 @@ class KeyVaultClient:
             # We always set the contentType here because only TLS certificates used on Application Gateway ever have an expiry time
             json_data = {"value": secret_value, "contentType":"application/x-pkcs12","attributes": json_data_attributes}
         else:
-            json_data = {"value": secret_value}
+            json_data = {"value": secret_value, "contentType":"application/pkcs8"}
         encoded_json_data = json.dumps(json_data).encode()
         req = Request(url, headers=headers, method='PUT', data=encoded_json_data)
         urlopen(req)
