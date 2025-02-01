@@ -28,11 +28,11 @@ A very simple way to do ACME in Azure, using Let's Encrypt.
 
 Sample values are provided below.
 
-"ACME_BLOB_STORAGE_NAME"   = "your-blob-storage-account-name"
-"ACME_KEYVAULT_NAME"       = "your-keyvault-account-name"
-"ACME_CONTACT_EMAIL"       = "mailto:security@yourdomain.invalid"
-"ACME_DIRECTORY_URL"       = "https://acme-v02.api.letsencrypt.org/directory"
-"ACME_COMMON_NAME"         = "myawesomewebsite.invalid"
+- "ACME_BLOB_STORAGE_NAME"   = "your-blob-storage-account-name"
+- "ACME_KEYVAULT_NAME"       = "your-keyvault-account-name"
+- "ACME_CONTACT_EMAIL"       = "mailto:security@yourdomain.invalid"
+- "ACME_DIRECTORY_URL"       = "https://acme-v02.api.letsencrypt.org/directory"
+- "ACME_COMMON_NAME"         = "myawesomewebsite.invalid"
 
 # DNS configuration of CAA records to significantly improve ACME security
 
