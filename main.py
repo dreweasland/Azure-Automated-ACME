@@ -152,8 +152,8 @@ class KeyVaultClient:
         parsed_json = json.loads(response.read().decode())
         return parsed_json['value']
 
-ACCOUNT_KEY_SECRET_NAME = "betteragwacme-accountkey-test1"
-TLS_CERT_SECRET_NAME = "betteragwacme-tlscert"
+ACCOUNT_KEY_SECRET_NAME = "ACME-accountkey"
+TLS_CERT_SECRET_NAME = "ACME-tlscert"
 ACCOUNT_KEY_PATH = "/tmp/thisistheaccount.key"
 CSR_PATH="/tmp/thisisthe.csr"
 DOMAIN_PRIVATE_KEY_PATH="/tmp/thisisthedomainprivate.key"
