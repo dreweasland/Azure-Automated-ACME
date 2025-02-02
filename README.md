@@ -20,6 +20,7 @@ All it does is use an Azure Function to create CSRs, perform ACME orders, store 
 - Very easy to audit. Why should you trust me? Trust yourself instead.
 - Minimal maintenance overall
 - Only uses the Python standard library, no external libraries
+- New private key used upon every renewal
 - No BS. If this has even a hint of BS anywhere, it is a bug. File an issue.
 
 # Azure resources shopping list
