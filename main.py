@@ -29,6 +29,17 @@ import subprocess, json, os, base64, binascii, time, hashlib, re, logging, os
 from urllib.request import urlopen, Request
 from datetime import datetime, timedelta, timezone
 from urllib.error import URLError, HTTPError
+import azure.functions as func  # type: ignore
+app = func.FunctionApp()
+
+@app.function_name(name="acme")
+@app.timer_trigger(schedule="0 0 9 * * MON", arg_name="acme", run_on_startup=False)
+def exec_renewal(acme: func.TimerRequest) -> None:
+    utc_timestamp = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+    if acme.past_due:
+        logging.info('The timer is past due!')
+    exec_renewal_start()
+    logging.info('Python timer trigger function ran at %s', utc_timestamp)
 
 class BlobStorageAuth:
     def __init__(self):
@@ -396,7 +407,7 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
         log.info("Finished with all ACME processes and cleanup")
     return base64cert
 
-def main():
+def exec_renewal_start():
     # Go through the whole ACME flow, this deals with the account key, CSR, acme-challenge, removal of the ACME challenge and cleanup.
     signed_crt = get_crt()
     key_vault_client = KeyVaultClient(KEYVAULT_NAME)
@@ -406,4 +417,3 @@ def main():
     log.info("We have finished everything!", success)
     # TODO: We now need to tag the Azure Application Gateway, so that way it will use the new cert immediately
     # TODO: We now need to revoke any certificates which remain in Azure Key Vault, and set them to expire in the next 10 minutes
-main()
