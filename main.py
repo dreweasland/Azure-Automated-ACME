@@ -374,7 +374,7 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
     with open(PEM_PATH, "w") as file:
         file.write(certificate_pem)
     # convert to pfx
-    _cmd(["openssl", "pkcs12", "-keypbe", "NONE", "-certpbe", "NONE", "-inkey", DOMAIN_PRIVATE_KEY_PATH, "-in", PEM_PATH, "-export", "-out", PFX_PATH], err_msg="OpenSSL Error")
+    _cmd(["openssl", "pkcs12", "-keypbe", "NONE", "-certpbe", "NONE", "-passout", "pass:", "-inkey", DOMAIN_PRIVATE_KEY_PATH, "-in", PEM_PATH, "-export", "-out", PFX_PATH], err_msg="OpenSSL Error")
 
     with open(PFX_PATH, "rb") as file:
         pfx = file.read()
