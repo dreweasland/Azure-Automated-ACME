@@ -159,6 +159,7 @@ CSR_PATH="/tmp/thisisthe.csr"
 DOMAIN_PRIVATE_KEY_PATH="/tmp/thisisthedomainprivate.key"
 PFX_PATH="/tmp/thisisthe.pfx"
 PEM_PATH="/tmp/thisisthesignedcert.pem"
+FINAL_B64="/tmp/thisisthefinal.b64"
 DEFAULT_DIRECTORY_URL = os.environ.get("ACME_DIRECTORY_URL")
 BLOB_STORAGE_NAME = os.environ.get("ACME_BLOB_STORAGE_NAME")
 CONTACT_EMAIL = os.environ.get("ACME_CONTACT_EMAIL")
@@ -376,8 +377,11 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
     # convert to pfx
     _cmd(["openssl", "pkcs12", "-keypbe", "NONE", "-certpbe", "NONE", "-passout", "pass:", "-inkey", DOMAIN_PRIVATE_KEY_PATH, "-in", PEM_PATH, "-export", "-out", PFX_PATH], err_msg="OpenSSL Error")
 
-    with open(PFX_PATH, "rb") as file:
-        pfx = file.read()
+    # convert pfx to b64 pfx
+    _cmd(["openssl", "base64", "-in", PFX_PATH, "-out", FINAL_B64], err_msg="OpenSSL Error")
+
+    with open(FINAL_B64, "r") as file:
+        base64cert = file.read()
     
     try:
         os.remove(DOMAIN_PRIVATE_KEY_PATH)
@@ -385,11 +389,12 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
         os.remove(ACCOUNT_KEY_PATH)
         os.remove(PFX_PATH)
         os.remove(PEM_PATH)
+        os.remove(FINAL_B64)
     except:
         print("Error: Unable to fully clean up all files")
     finally:
         print("Finished with all ACME processes and cleanup")
-    return str(pfx)
+    return base64cert
 
 def main():
     # Go through the whole ACME flow, this deals with the account key, CSR, acme-challenge, removal of the ACME challenge and cleanup.
