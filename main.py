@@ -152,14 +152,14 @@ class KeyVaultClient:
         parsed_json = json.loads(response.read().decode())
         return parsed_json['value']
 
-ACCOUNT_KEY_SECRET_NAME = "ACME-accountkey"
-TLS_CERT_SECRET_NAME = "ACME-tlscert"
 ACCOUNT_KEY_PATH = "/tmp/thisistheaccount.key"
 CSR_PATH="/tmp/thisisthe.csr"
 DOMAIN_PRIVATE_KEY_PATH="/tmp/thisisthedomainprivate.key"
 PFX_PATH="/tmp/thisisthe.pfx"
 PEM_PATH="/tmp/thisisthesignedcert.pem"
 FINAL_B64="/tmp/thisisthefinal.b64"
+ACCOUNT_KEY_SECRET_NAME = os.environ.get("ACME_ACCOUNT_KEY_KEYVAULT_SECRET")
+TLS_CERT_SECRET_NAME = os.environ.get("ACME_TLS_CERT_KEYVAULT_SECRET")
 DEFAULT_DIRECTORY_URL = os.environ.get("ACME_DIRECTORY_URL")
 BLOB_STORAGE_NAME = os.environ.get("ACME_BLOB_STORAGE_NAME")
 CONTACT_EMAIL = os.environ.get("ACME_CONTACT_EMAIL")
