@@ -33,6 +33,8 @@ Sample values are provided below.
 - "ACME_CONTACT_EMAIL"       = "mailto:security@yourdomain.invalid"
 - "ACME_DIRECTORY_URL"       = "https://acme-v02.api.letsencrypt.org/directory"
 - "ACME_COMMON_NAME"         = "myawesomewebsite.invalid"
+- "ACCOUNT_KEY_SECRET_NAME"  = "account-key-secret-name-in-kv"
+- "TLS_CERT_SECRET_NAME"     = "tls-cert-secret-name-in-kv"
 
 # DNS configuration of CAA records to significantly improve ACME security
 
