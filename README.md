@@ -80,3 +80,7 @@ This will do 3 things:
 - Prevent malicious actors from abusing Let's Encrypt using techniques such as BGP and DNS zone hijacking, from issuing certificates, as you have a CAA record pinning the account ID, and the credentials for this account are in your Azure KeyVault
 
 It is strongly reccomended to also deploy DNSSEC, as this will further improve resilience of DNS queries performed by the CA when doing ACME challenges, irrespective of challenge type. Though, the CA/Browser forum doesn't currently mandate this for CA's.
+
+# Disclaimer
+
+This repository is not endorsed by my employer, organisation, clients, anyone, anything or any entity in any way, shape or form. This is released on the internet as a convenience only. Usage of this script may cause anthropomorphic X.509 certificates to become projected onto your prefrontal cortex during your dreams. No refunds, no "an X.509 certificate manifested into a sentient being and laughed at me in my dream for doing bad PKI management at work" support here.
