@@ -1,6 +1,6 @@
-# Better-AGW-ACME
+# Azure Automated ACME
 
-A very simple way to do ACME in Azure, using Let's Encrypt.
+A very simple way to do ACME in Azure, using Let's Encrypt. Works with Azure Application Gateway and Azure Front Door.
 
 # Proposed Architecture
 
@@ -10,15 +10,14 @@ A very simple way to do ACME in Azure, using Let's Encrypt.
 
 - Strong keysizes for issued certificates (RSA 4096)
 - HTTP-01 challenges
-- Azure Application Gateway aware
 - Configures Let's Encrypt to email you with alerts regarding issuance
-- Supports RFC 8657 accounturi pinning, preventing malicious actors from misissuing certificates
+- Ready for usage with RFC 8657 accounturi pinning, which when used, is critical for preventing malicious actors from misissuing certificates
 - Automatically pushes certificates to Azure KeyVault
 - Automatically fetches account key from Azure KeyVault
 - Automatically generates and places account key in Azure KeyVault if one has not been set
 - Automatically registers account key at the CA if account key is unregistered
 - Does not expose any user maintained web server, instead relies on Azure Blob Storage Static Websites
-- Runs cheap as chips, you pay mere cents per month to Microsoft for running this
+- Runs cheap as chips, you pay mere cents per month to Microsoft for running this when used in a Flex Consumption App Service Plan
 - Fully uses Azure Managed Identity - no manual credential management. ever.
 - Very easy to audit. Why should you trust me? Trust yourself instead.
 - Minimal maintenance overall
