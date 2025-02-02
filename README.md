@@ -2,10 +2,6 @@
 
 A very simple way to do ACME in Azure, using Let's Encrypt. Works with Azure Application Gateway and Azure Front Door.
 
-# Proposed Architecture
-
-![Architectural Diagram](diagram.png)
-
 # Features
 
 - Strong keysizes for issued certificates (RSA 4096)
@@ -22,6 +18,32 @@ A very simple way to do ACME in Azure, using Let's Encrypt. Works with Azure App
 - Very easy to audit. Why should you trust me? Trust yourself instead.
 - Minimal maintenance overall
 - No BS. If this has even a hint of BS anywhere, it is a bug. File an issue.
+
+# Azure resources shopping list
+
+The list here assumes you will be using dedicated Azure resources for ACME automation. Use dedicated resources to uphold a strong security model. Don't cut corners here.
+
+- Azure KeyVault
+   - Must be network accessible by the Azure Application Gateway/Azure Front Door
+   - Must be network accessible by the Azure Function
+   - Must grant Azure Application Gateway the Azure RBAC role of "Key Vault Secrets User" on the TLS certificate secret
+   - Must grant Azure Function the Azure RBAC role of "Key Vault Secrets Officer" on the Azure KeyVault
+   - If needing to create the secret in advance of having a TLS certificate there, use the value "placeholder" for the initial creation and ignore value changes
+- Azure Storage Account
+   - Must be configured with Static Websites support enabled
+   - Must have Static Website endpoint network accessible by the Azure Application Gateway/Azure Front Door
+   - Must have Static Website endpoint network accessible by the Azure Function
+   - Must have Blob Storage endpoint network accessible by the Azure Function
+   - Must grant Azure Function the Azure RBAC role of "Storage Blob Data Contributor"
+- Azure Application Gateway/Azure Front Door
+   - Must use KeyVault reference without a version identifier to the KeyVault secret used for TLS certificates
+   - Must serve HTTP traffic on port 80 and HTTPS traffic on port 443
+   - Must reverse proxy the Azure Blob Storage Static Site to serve requests on "/.well-known/acme-challenge/*"
+   - Must have outbound network access to CRLs for TLS CAs used by Azure Blob Storage (HTTP 80 to crl.microsoft.com and crl3.digicert.com)
+- Azure Function
+   - Must have outbound network access to your ACME CA of choice (e.g HTTPS 443 to acme-v02.api.letsencrypt.org)
+   - Must have the source code from this repo deployed to it
+   - Must run on a Flex Consumption App Service Plan, if you enjoy not burning money
 
 # Environment Variables
 
