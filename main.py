@@ -376,7 +376,7 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
     # convert to pfx
     _cmd(["openssl", "pkcs12", "-keypbe", "NONE", "-certpbe", "NONE", "-inkey", DOMAIN_PRIVATE_KEY_PATH, "-in", PEM_PATH, "-export", "-out", PFX_PATH], err_msg="OpenSSL Error")
 
-    with open(PFX_PATH, "r") as file:
+    with open(PFX_PATH, "rb") as file:
         pfx = file.read()
     
     try:
@@ -389,7 +389,7 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
         print("Error: Unable to fully clean up all files")
     finally:
         print("Finished with all ACME processes and cleanup")
-    return pfx
+    return str(pfx)
 
 def main():
     # Go through the whole ACME flow, this deals with the account key, CSR, acme-challenge, removal of the ACME challenge and cleanup.
