@@ -193,22 +193,22 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
 
     except HTTPError as e:
             if e.code == 404:
-                print("Secret for account key was not found, making new account key")
+                log.info("Secret for account key was not found, making new account key")
                 try:
                     account_key_value = _cmd(["openssl", "genrsa", "4096"], err_msg="OpenSSL Error")
                     with open(ACCOUNT_KEY_PATH, "wb") as file:
                         file.write(account_key_value)
                 except:
-                    print("Something has gone very wrong whilst trying to generate a new account key")
+                    log.info("Something has gone very wrong whilst trying to generate a new account key")
                     exit()
                 finally:
-                    print("Generated new account key with OpenSSL")
+                    log.info("Generated new account key with OpenSSL")
                     with open(ACCOUNT_KEY_PATH, "r") as file:
                         account_key_value = file.read()
                     success = keyvault_client.set_secret(secret_name=ACCOUNT_KEY_SECRET_NAME,secret_value=account_key_value,expiry_time="never")
             else:
-                print("Something has gone very wrong whilst trying to fetch the account key from keyvault")
-                print("The error is: ",e)
+                log.info("Something has gone very wrong whilst trying to fetch the account key from keyvault")
+                log.info("The error is: ",e)
                 exit()
     finally:
         # Write account key value, be it obtained via Azure Key Vault or generated
@@ -228,10 +228,10 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
         with open(CSR_PATH, "wb") as file:
             file.write(csr_value)
     except:
-        print("Something has gone very wrong whilst trying to generate a new CSR or domain private key")
+        log.info("Something has gone very wrong whilst trying to generate a new CSR or domain private key")
         exit()
     finally:
-        print("Generated new CSR and domain private key with OpenSSL")
+        log.info("Generated new CSR and domain private key with OpenSSL")
 
     # helper function - make request and automatically parse json response
     def _do_request(url, data=None, err_msg="Error", depth=0):
@@ -345,7 +345,7 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
         blob_name=".well-known/acme-challenge/"+token
         keyauthorization = bytes(keyauthorization,"utf-8")
         success = storage_client.upload_blob(container_name="$web",blob_name=blob_name,content=keyauthorization)
-        print(f"Upload successful for ACME Challenge file: {success}")
+        log.info(f"Upload successful for ACME Challenge file: {success}")
 
         # say the challenge is done
         _send_signed_request(challenge['url'], {}, "Error submitting challenges: {0}".format(domain))
@@ -354,7 +354,7 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
             raise ValueError("Challenge did not pass for {0}: {1}".format(domain, authorization))
         
         success = storage_client.delete_blob(container_name="$web",blob_name=blob_name)
-        print(f"Delete successful for ACME Challenge file as we are done with it now: {success}") 
+        log.info(f"Delete successful for ACME Challenge file as we are done with it now: {success}") 
         log.info("{0} verified!".format(domain))
 
     # finalize the order with the csr
@@ -391,9 +391,9 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
         os.remove(PEM_PATH)
         os.remove(FINAL_B64)
     except:
-        print("Error: Unable to fully clean up all files")
+        log.info("Error: Unable to fully clean up all files")
     finally:
-        print("Finished with all ACME processes and cleanup")
+        log.info("Finished with all ACME processes and cleanup")
     return base64cert
 
 def main():
@@ -403,7 +403,7 @@ def main():
     future_date = datetime.utcnow() + timedelta(days=90) # TLS certificates only have a max lifetime of 90 days
     future_unix_time = int(future_date.timestamp())
     success = key_vault_client.set_secret(secret_name=TLS_CERT_SECRET_NAME,secret_value=signed_crt,expiry_time=future_unix_time)
-    print("We have finished everything!", success)
+    log.info("We have finished everything!", success)
     # TODO: We now need to tag the Azure Application Gateway, so that way it will use the new cert immediately
     # TODO: We now need to revoke any certificates which remain in Azure Key Vault, and set them to expire in the next 10 minutes
 main()
