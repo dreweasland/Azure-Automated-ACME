@@ -1,6 +1,6 @@
 # Azure Automated ACME
 
-A very simple way to do ACME in Azure, using Let's Encrypt. Works with Azure Application Gateway and Azure Front Door. 
+A very simple way to do ACME in Azure, using Let's Encrypt. Works with Azure Application Gateway and Azure Front Door.
 
 All it does is use an Azure Function to create CSRs, perform ACME orders, store TLS certificates and create/use the ACME account key for issuing requests to your ACME CA of choice inside Azure KeyVault. It uses a Azure Storage Account Static Website to serve ACME challenge files which are reverse proxied by Azure Application Gateway/Azure Front Door to perform HTTP-01 ACME validation.
 
@@ -21,7 +21,7 @@ All it does is use an Azure Function to create CSRs, perform ACME orders, store 
 - Minimal maintenance overall
 - Only uses the Python standard library, no external libraries
 - New private key used upon every renewal
-- No BS. If this has even a hint of BS anywhere, it is a bug. File an issue.
+- No nonsense. If this has even a hint of nonsense anywhere, it is a bug. File an issue.
 
 # Azure resources shopping list
 
