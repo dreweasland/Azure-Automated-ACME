@@ -302,6 +302,22 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
 
     # parse account key to get public key
     log.info("Parsing account key...")
+
+    log.info(f"Checking existence and size of account key at: {ACCOUNT_KEY_PATH}")
+    if not os.path.exists(ACCOUNT_KEY_PATH):
+        log.error("ACCOUNT_KEY_PATH does not exist!")
+        raise FileNotFoundError(f"Missing account key file at {ACCOUNT_KEY_PATH}")
+    else:
+        size = os.path.getsize(ACCOUNT_KEY_PATH)
+        log.info(f"ACCOUNT_KEY_PATH exists and is {size} bytes")
+        if size == 0:
+            raise ValueError(f"Account key file at {ACCOUNT_KEY_PATH} is empty")
+
+        # Optional: show a sample of the key (be cautious in prod)
+        with open(ACCOUNT_KEY_PATH, "r") as f:
+            head = f.read(64)
+            log.debug(f"Account key begins with: {head}")
+
     out = _cmd(["openssl", "rsa", "-in", ACCOUNT_KEY_PATH, "-noout", "-text"], err_msg="OpenSSL Error")
     pub_pattern = r"modulus:[\s]+?00:([a-f0-9\:\s]+?)\npublicExponent: ([0-9]+)"
     pub_hex, pub_exp = re.search(pub_pattern, out.decode('utf8'), re.MULTILINE|re.DOTALL).groups()
