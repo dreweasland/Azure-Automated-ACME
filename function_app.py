@@ -209,17 +209,16 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
         account_key_value = keyvault_client.get_latest_secret_value(
             secret_name=ACCOUNT_KEY_SECRET_NAME
         )
-        # write vault‐fetched key
+        # Write the key to disk
         with open(ACCOUNT_KEY_PATH, "w") as file:
             file.write(account_key_value)
 
     except HTTPError as e:
         if e.code == 404:
-            log.info("Secret for account key was not found, making new account key")
+            log.info("Secret for account key was not found (404), generating a new account key.")
             account_key_bytes = _cmd(["openssl", "genrsa", "4096"], err_msg="OpenSSL Error")
             with open(ACCOUNT_KEY_PATH, "wb") as file:
                 file.write(account_key_bytes)
-            log.info("Generated new account key with OpenSSL")
             with open(ACCOUNT_KEY_PATH, "r") as file:
                 account_key_value = file.read()
             keyvault_client.set_secret(
@@ -227,9 +226,20 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
                 secret_value=account_key_value,
                 expiry_time="never"
             )
-        else:
-            log.error("Failed to fetch account key from Key Vault (HTTP %s): %s", e.code, e)
+        elif e.code == 403:
+            log.error("Access denied when trying to access Key Vault. Check MSI permissions or identity config.")
             raise
+        else:
+            log.error("Unexpected HTTP error when accessing Key Vault (HTTP %s): %s", e.code, e)
+            raise
+
+    except URLError as e:
+        log.error("Network error when accessing Key Vault: %s", e.reason)
+        raise
+
+    except Exception as e:
+        log.exception("Unexpected error during Key Vault access")
+        raise
 
     # Generate domain private key and CSR with OpenSSL
     try:
