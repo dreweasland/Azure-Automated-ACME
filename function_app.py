@@ -35,7 +35,7 @@ app = func.FunctionApp()
 @app.function_name(name="acme")
 @app.timer_trigger(schedule="0 0 9 * * MON", arg_name="acme", run_on_startup=False)
 def exec_renewal(acme: func.TimerRequest) -> None:
-    utc_timestamp = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+    utc_timestamp = datetime.now(timezone.utc).isoformat()
     if acme.past_due:
         logging.info('The timer is past due!')
     try:
@@ -112,7 +112,7 @@ class KeyVaultAuth:
         self.token = None
         self.token_expires_at = None
     def get_access_token(self):
-        if self.token and self.token_expires_at > datetime.utcnow() + timedelta(minutes=5):
+        if self.token and self.token_expires_at > datetime.now(timezone.utc) + timedelta(minutes=5):
             return self.token
         endpoint = os.getenv('IDENTITY_ENDPOINT')
         identity_header = os.getenv('IDENTITY_HEADER')
@@ -129,7 +129,7 @@ class KeyVaultAuth:
                 raise Exception(f"Failed to obtain token. Status code: {response.status}")
             response_data = json.loads(response.read())
             self.token = response_data['access_token']
-            self.token_expires_at = datetime.utcnow() + timedelta(hours=1)
+            self.token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
             return self.token
         except URLError as e:
             raise Exception(f"Failed to obtain token: {str(e)}")
@@ -426,9 +426,13 @@ def exec_renewal_start():
     # Go through the whole ACME flow, this deals with the account key, CSR, acme-challenge, removal of the ACME challenge and cleanup.
     signed_crt = get_crt()
     key_vault_client = KeyVaultClient(KEYVAULT_NAME)
-    future_date = datetime.utcnow() + timedelta(days=90) # TLS certificates only have a max lifetime of 90 days
+    future_date = datetime.now(timezone.utc) + timedelta(days=90)  # TLS certificates only have a max lifetime of 90 days
     future_unix_time = int(future_date.timestamp())
-    success = key_vault_client.set_secret(secret_name=TLS_CERT_SECRET_NAME,secret_value=signed_crt,expiry_time=future_unix_time)
-    log.info("We have finished everything!", success)
+    success = key_vault_client.set_secret(
+        secret_name=TLS_CERT_SECRET_NAME,
+        secret_value=signed_crt,
+        expiry_time=future_unix_time
+    )
+    LOGGER.info("We have finished everything! Success: %s", success)
     # TODO: We now need to tag the Azure Application Gateway, so that way it will use the new cert immediately
     # TODO: We now need to revoke any certificates which remain in Azure Key Vault, and set them to expire in the next 10 minutes
