@@ -328,10 +328,21 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
     log.info("Registering account...")
     reg_payload = {"termsOfServiceAgreed": True} if contact is None else {"termsOfServiceAgreed": True, "contact": [contact,]}
     account, code, acct_headers = _send_signed_request(directory['newAccount'], reg_payload, "Error registering")
-    log.info("{0} Account ID: {1}".format("Registered!" if code == 201 else "Already registered!", acct_headers['Location']))
+    log.info(
+       "%s Account ID: %s",
+        "Registered!" if code == 201 else "Already registered!",
+        acct_headers['Location']
+    )
     if contact is not None:
-        account, _, _ = _send_signed_request(acct_headers['Location'], {"contact": [contact,]}, "Error updating contact details")
-        log.info("Updated contact details:\n{0}".format("\n".join(account['contact'])))
+        account, _, _ = _send_signed_request(
+            acct_headers['Location'],
+            {"contact": [contact]},
+            "Error updating contact details"
+        )
+        if isinstance(account, dict) and "contact" in account:
+            log.info("Updated contact details:\n%s", "\n".join(account["contact"]))
+        else:
+            log.info("Contact update succeeded, but no 'contact' field returned in response.")
 
     # create a new order
     log.info("Creating new order...")
