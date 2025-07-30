@@ -182,7 +182,7 @@ LOGGER.setLevel(logging.INFO)
 
 def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT_DIRECTORY_URL, contact=CONTACT_EMAIL):
 
-    # Global variable init
+    account_key_value = None
     directory, acct_headers, alg, jwk = None, None, None, None
 
     # helper functions - base64 encode for jose spec
@@ -200,32 +200,33 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
     # Fetch account key from Azure KeyVault, if one does not exist, generate one and store it there
     try:
         keyvault_client = KeyVaultClient(azure_keyvault_name)
-        account_key_value = keyvault_client.get_latest_secret_value(secret_name=ACCOUNT_KEY_SECRET_NAME)
-
-    except HTTPError as e:
-            if e.code == 404:
-                log.info("Secret for account key was not found, making new account key")
-                try:
-                    account_key_value = _cmd(["openssl", "genrsa", "4096"], err_msg="OpenSSL Error")
-                    with open(ACCOUNT_KEY_PATH, "wb") as file:
-                        file.write(account_key_value)
-                except:
-                    log.info("Something has gone very wrong whilst trying to generate a new account key")
-                    exit()
-                finally:
-                    log.info("Generated new account key with OpenSSL")
-                    with open(ACCOUNT_KEY_PATH, "r") as file:
-                        account_key_value = file.read()
-                    success = keyvault_client.set_secret(secret_name=ACCOUNT_KEY_SECRET_NAME,secret_value=account_key_value,expiry_time="never")
-            else:
-                log.info("Something has gone very wrong whilst trying to fetch the account key from keyvault")
-                log.info("The error is: ",e)
-                exit()
-    finally:
-        # Write account key value, be it obtained via Azure Key Vault or generated
+        account_key_value = keyvault_client.get_latest_secret_value(
+            secret_name=ACCOUNT_KEY_SECRET_NAME
+        )
+        # write vault‐fetched key
         with open(ACCOUNT_KEY_PATH, "w") as file:
             file.write(account_key_value)
 
+    except HTTPError as e:
+        if e.code == 404:
+            log.info("Secret for account key was not found, making new account key")
+            # generate and persist locally
+            account_key_bytes = _cmd(["openssl", "genrsa", "4096"], err_msg="OpenSSL Error")
+            with open(ACCOUNT_KEY_PATH, "wb") as file:
+                file.write(account_key_bytes)
+            log.info("Generated new account key with OpenSSL")
+            # read back into string
+            with open(ACCOUNT_KEY_PATH, "r") as file:
+                account_key_value = file.read()
+            # store in Key Vault
+            keyvault_client.set_secret(
+                secret_name=ACCOUNT_KEY_SECRET_NAME,
+                secret_value=account_key_value,
+                expiry_time="never"
+            )
+        else:
+            log.info("Failed to fetch account key from Key Vault (HTTP %s): %s", e.code, e)
+            exit()
 
     # Generate domain private key and CSR with OpenSSL
     try:
