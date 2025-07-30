@@ -38,8 +38,14 @@ def exec_renewal(acme: func.TimerRequest) -> None:
     utc_timestamp = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
     if acme.past_due:
         logging.info('The timer is past due!')
-    exec_renewal_start()
-    logging.info('Python timer trigger function ran at %s', utc_timestamp)
+    try:
+        exec_renewal_start()
+        logging.info('Python timer trigger function ran at %s', utc_timestamp)
+    except Exception as e:
+        # Log full exception so Azure Functions captures it
+        logging.exception("Error during exec_renewal_start")
+        # Re-raise so the function host marks this invocation as failed
+        raise
 
 class BlobStorageAuth:
     def __init__(self):
@@ -210,23 +216,20 @@ def get_crt(azure_keyvault_name=KEYVAULT_NAME, log=LOGGER, directory_url=DEFAULT
     except HTTPError as e:
         if e.code == 404:
             log.info("Secret for account key was not found, making new account key")
-            # generate and persist locally
             account_key_bytes = _cmd(["openssl", "genrsa", "4096"], err_msg="OpenSSL Error")
             with open(ACCOUNT_KEY_PATH, "wb") as file:
                 file.write(account_key_bytes)
             log.info("Generated new account key with OpenSSL")
-            # read back into string
             with open(ACCOUNT_KEY_PATH, "r") as file:
                 account_key_value = file.read()
-            # store in Key Vault
             keyvault_client.set_secret(
                 secret_name=ACCOUNT_KEY_SECRET_NAME,
                 secret_value=account_key_value,
                 expiry_time="never"
             )
         else:
-            log.info("Failed to fetch account key from Key Vault (HTTP %s): %s", e.code, e)
-            exit()
+            log.error("Failed to fetch account key from Key Vault (HTTP %s): %s", e.code, e)
+            raise
 
     # Generate domain private key and CSR with OpenSSL
     try:
